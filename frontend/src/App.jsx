@@ -3,6 +3,7 @@ import { useSearch } from './hooks/useSearch';
 import { useBookmarks } from './hooks/useBookmarks';
 import { usePersistentState } from './hooks/usePersistentState';
 import { useHistory } from './hooks/useHistory';
+import { useHealth } from './hooks/useHealth';
 import { applyClientFilters } from './lib/filters';
 import { SearchBar } from './components/SearchBar';
 import { WeightInput } from './components/WeightInput';
@@ -15,6 +16,7 @@ import { BookmarksView } from './components/BookmarksView';
 import { ImageSearchTab } from './components/ImageSearchTab';
 import { ViewToggle } from './components/ViewToggle';
 import { FilterPanel } from './components/FilterPanel';
+import { HealthDot } from './components/HealthDot';
 import './App.css';
 
 const DEFAULT_PRICING = { rate: 185, markupPct: 20, shipVndPerKg: 175000, defaultWeightKg: 0.2 };
@@ -49,10 +51,20 @@ export default function App() {
     setMode,
     loadMore,
     refresh,
+    reset,
   } = useSearch();
 
   const { bookmarks, count, isBookmarked, toggle, clear } = useBookmarks();
   const { history, push: pushHistory, remove: removeHistory, clear: clearHistory } = useHistory();
+  const health = useHealth();
+
+  const goHome = () => {
+    setView('search');
+    setSourceFilter('all');
+    setSortBy('relevance');
+    setFilters(EMPTY_FILTERS);
+    reset();
+  };
 
   const pricing = livePricing || cachedPricing || DEFAULT_PRICING;
 
@@ -82,11 +94,24 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="brand">
+        <button
+          type="button"
+          className="brand"
+          onClick={goHome}
+          aria-label="Go to home"
+        >
           <h1>EmThao<span className="brand-accent">JP</span></h1>
           <span className="brand-tag">Mercari · Yahoo · PayPay</span>
+        </button>
+        <div className="header-right">
+          <HealthDot
+            status={health.status}
+            lastChecked={health.lastChecked}
+            details={health.details}
+            onClick={health.check}
+          />
+          <ViewToggle active={view} onChange={setView} bookmarkCount={count} />
         </div>
-        <ViewToggle active={view} onChange={setView} bookmarkCount={count} />
       </header>
 
       <div className="control-row">

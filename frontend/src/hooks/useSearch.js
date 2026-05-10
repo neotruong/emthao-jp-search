@@ -114,6 +114,20 @@ export function useSearch() {
     setRefreshing(false);
   }, []);
 
+  const reset = useCallback(() => {
+    inflightRef.current?.abort();
+    inflightRef.current = null;
+    setQuery('');
+    setYahooMode('all');
+    setPage(1);
+    setResults([]);
+    setCached(false);
+    setHasMore(true);
+    setLoading(false);
+    setRefreshing(false);
+    setError(null);
+  }, []);
+
   return {
     query,
     yahooMode,
@@ -130,5 +144,6 @@ export function useSearch() {
     loadMore,
     refresh,
     cancel,
+    reset,
   };
 }

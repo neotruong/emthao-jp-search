@@ -30,6 +30,16 @@ async function step(label, fn) {
     await page.waitForSelector('.brand h1', { timeout: 10000 });
   });
 
+  await step('1a. Health dot reaches "OK"', async () => {
+    await page.waitForFunction(
+      () => document.querySelector('.health-dot')?.classList.contains('health-ok'),
+      null,
+      { timeout: 10000 }
+    );
+    const label = await page.textContent('.health-dot .health-label');
+    console.log(`   health label: ${label}`);
+  });
+
   await step('2. Search "iphone"', async () => {
     await page.fill('.search-input', 'iphone');
     await page.click('.search-submit');
@@ -91,6 +101,20 @@ async function step(label, fn) {
     await page.waitForTimeout(150);
     const summary = await page.textContent('.filter-count');
     console.log(`   summary after reset: ${summary}`);
+  });
+
+  await step('7a. Click brand → home reset', async () => {
+    // Some search state should be active here from earlier steps.
+    await page.click('.brand');
+    await page.waitForTimeout(150);
+    const inputVal = await page.inputValue('.search-input');
+    const cards = await page.$$eval('.card:not(.skeleton)', (cs) => cs.length);
+    const filterSummary = await page.$('.filter-count');
+    console.log(`   after brand click: input="${inputVal}", cards=${cards}, filter-panel-mounted=${!!filterSummary}`);
+    // Re-search so subsequent steps still have results
+    await page.fill('.search-input', 'iphone');
+    await page.click('.search-submit');
+    await page.waitForSelector('.card:not(.skeleton)', { timeout: 30000 });
   });
 
   await step('8. Pagination + history + bookmark + refresh smoke', async () => {

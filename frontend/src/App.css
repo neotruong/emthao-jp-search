@@ -58,6 +58,20 @@ body, html, #root {
   margin-bottom: 20px;
 }
 
+.brand {
+  background: transparent;
+  border: 0;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background 0.12s;
+}
+.brand:hover { background: var(--surface-2); }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .brand h1 {
   margin: 0;
   font-size: 22px;
@@ -70,6 +84,46 @@ body, html, #root {
   color: var(--text-muted);
   font-size: 12px;
   margin-top: 2px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ===== Health dot ===== */
+.health-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.health-dot:hover { color: var(--text); border-color: var(--accent); }
+.health-bullet {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.health-ok       { color: #2e7d32; border-color: rgba(46,125,50,0.4); background: rgba(46,125,50,0.08); }
+.health-down     { color: var(--danger); border-color: rgba(240,68,56,0.4); background: rgba(240,68,56,0.08); }
+.health-checking { color: var(--accent); }
+.health-checking .health-bullet { animation: pulse 1.0s ease-in-out infinite; }
+.health-unknown  { color: var(--text-muted); }
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
 }
 
 .view-toggle {
