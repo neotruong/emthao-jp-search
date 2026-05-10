@@ -73,7 +73,9 @@ cd backend && node scripts/smoke-frontend.js
 
 **Cold start:** Render free sleeps after 15 min idle. First request after sleep takes ~30–60 s while the Docker container wakes and Chromium warms.
 
-**Memory:** Chromium ≈ 250–300 MB + Node ≈ 100 MB on a 512 MB free instance. One concurrent search safe; if you hit `OOMKilled` in Render logs, upgrade to **Starter ($7/mo)**.
+**Memory + CPU:** Chromium ≈ 250–300 MB + Node ≈ 100 MB on a 512 MB free instance. CPU is throttled to **0.1 CPU** which makes `page.goto` slow; the first deploy returned `count: 0` because the default 12 s scraper budget wasn't enough. The current `render.yaml` bakes `SCRAPER_TIMEOUT_MS=25000` and `SCRAPE_CONCURRENCY=2` for this reason. If you upgrade to **Starter ($7/mo, 0.5 CPU)**, drop the timeout back to ~12000 and raise concurrency to 3.
+
+**Resource blocking:** `browser.js` aborts image/media/font requests inside Playwright contexts — we never inspect them anyway and they were ~80 % of the bytes per page on slow hosts.
 
 ### Frontend → Vercel
 

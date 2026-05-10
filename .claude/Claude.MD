@@ -121,6 +121,19 @@ The 175,000 VND/kg shipping is the cost from JP to Vietnam by air cargo.
 
 ## Lessons learned during Phase 1
 
+-1. **Render free is too slow for parallel Chromium scraping with the
+    default timeouts.** First production deploy returned `count: 0` —
+    every scraper hit the 12 s budget because 0.1 CPU / 512 MB can't
+    finish even `domcontentloaded` for three pages in parallel. Fix:
+    - `SCRAPER_TIMEOUT_MS` defaults to 20 s (was 12 s); env-tunable.
+    - `SCRAPE_CONCURRENCY` defaults to 2 (was 3); env-tunable.
+    - `browser.context.route` aborts image/media/font requests — drops
+      most bytes + render work before they happen.
+    - Chromium launch args trimmed: `--disable-gpu`,
+      `--disable-software-rasterizer`, `--disable-extensions`, etc.
+    - `render.yaml` bakes the env values in.
+    Real fix is **Render Starter ($7/mo, 0.5 CPU)** — at that point lower
+    `SCRAPER_TIMEOUT_MS` back to 12000 and raise concurrency.
 0. **Don't show items the marketplace itself won't render.** Mercari's API
    gleefully returns sold-out and Beyond/Shops items mixed into search
    results; clicking those drops the user on 「エラーが発生しました」. Filter

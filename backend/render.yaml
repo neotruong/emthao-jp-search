@@ -16,3 +16,11 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: info
+      # Render free is 0.1 CPU / 512 MB. Localhost finishes a scrape in 2-4s;
+      # Render takes 8-15s under CPU contention. These two env values are tuned
+      # for free-tier and exposed here so an ops bump to Starter (0.5 CPU)
+      # can lower SCRAPER_TIMEOUT_MS back to 12000 + raise SCRAPE_CONCURRENCY.
+      - key: SCRAPER_TIMEOUT_MS
+        value: 25000
+      - key: SCRAPE_CONCURRENCY
+        value: 2

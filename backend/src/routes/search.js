@@ -17,7 +17,14 @@ const SCRAPERS = {
 };
 
 const ALL_SOURCES = ['mercari', 'yahoo', 'paypay'];
-const SCRAPER_TIMEOUT_MS = 12000;
+// Render free is 0.1 CPU / 512 MB — page.goto routinely needs 8-15 s under
+// CPU contention. Localhost finishes in 2-4 s. Tunable via env so local dev
+// can keep the snappier 12 s while prod uses the bigger budget.
+const SCRAPER_TIMEOUT_MS = parseInt(process.env.SCRAPER_TIMEOUT_MS, 10) || 20000;
+// Concurrency cap on cross-source scrapes. Free tier OOMs at 3 parallel
+// Chromium tabs; 2 leaves Mercari + Yahoo room while PayPay (which fast-fails
+// via geo-block detection) waits its turn.
+const SCRAPE_CONCURRENCY = parseInt(process.env.SCRAPE_CONCURRENCY, 10) || 2;
 
 function withTimeout(promise, ms, fallback, label) {
   return new Promise((resolve) => {
@@ -82,7 +89,7 @@ router.get('/search', async (req, res) => {
     return res.status(500).json({ error: 'Search failed', detail: err.message });
   }
 
-  const limiter = pLimit(3);
+  const limiter = pLimit(SCRAPE_CONCURRENCY);
   try {
     const perScraperResults = await Promise.all(
       sources.map((src) =>
