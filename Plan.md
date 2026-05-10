@@ -9,8 +9,18 @@
 **Phase 1 — Done ✅ (deployed 2026-05-10)**
 
 - **Repo:** https://github.com/neotruong/emthao-jp-search (public)
-- **Backend (Render free, Singapore):** _set after Render deploy → e.g._ `https://emthaojp-backend.onrender.com`
+- **Backend (Render free, Singapore):** https://emthaojp-backend.onrender.com — ⚠️ migrating to Fly.io Tokyo (see below)
 - **Frontend (Vercel free):** _set after Vercel deploy → e.g._ `https://emthao-jp-search.vercel.app`
+
+### Backend host migration in progress (2026-05-11)
+
+Render free's 0.1 CPU is a hard floor for Chromium scraping — even after tuning, scrape budgets are tight. Migrating to **Fly.io Tokyo (`nrt`)** because:
+
+- 1 vCPU vs 0.1 — scrape budgets drop back to localhost-class (12 s vs 25 s).
+- Tokyo region removes PayPay's geo-block (intermittent on SG IPs) — full 3-of-3 sources.
+- Cost ≈ $3–5/mo with auto-suspend, similar to Render Starter ($7) but with way more CPU.
+
+Config: `backend/fly.toml` (committed). Migration runbook: `INFRA.local.md` (local only — `flyctl install`, `fly auth login`, `fly deploy`).
 
 Phase 1 acceptance criteria (from the canonical plan):
 - ✅ User opens the public URL and searches a keyword.

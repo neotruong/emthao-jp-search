@@ -5,7 +5,7 @@ Internal Japanese marketplace search aggregator: one keyword → unified results
 | | |
 |---|---|
 | **Repo** | https://github.com/neotruong/emthao-jp-search |
-| **Backend** | Render free (Singapore) — _set after deploy_ |
+| **Backend** | Render free (Singapore) → migrating to Fly.io Tokyo for better CPU + no PayPay geo-block ([why](#backend-host-migration-render--flyio)) |
 | **Frontend** | Vercel free — _set after deploy_ |
 | **Status** | Phase 1 done ✅ (deployed 2026-05-10). Phases 2–5 in `Plan.md` |
 
@@ -65,17 +65,41 @@ cd backend && node scripts/smoke-frontend.js
 
 ## Production deploy
 
-### Backend → Render
+### Backend → Fly.io Tokyo (recommended)
 
-1. Push to `main`.
-2. **Render → New → Blueprint** → connect `neotruong/emthao-jp-search` → it reads `backend/render.yaml` (Docker, Singapore, free plan).
-3. Set `ALLOWED_ORIGIN` env to the Vercel URL once the frontend is up. Until then, `*` is fine.
+```sh
+brew install flyctl
+fly auth login
+cd backend
+fly apps create emthaojp-backend           # adjust name if taken
+fly deploy --remote-only                    # uses backend/fly.toml
+```
 
-**Cold start:** Render free sleeps after 15 min idle. First request after sleep takes ~30–60 s while the Docker container wakes and Chromium warms.
+`fly.toml` ships with sensible defaults: Tokyo region, 1 vCPU / 1 GB, auto-stop machines (scale-to-zero ⇒ ~$3–5/mo), `/health` health-check, `SCRAPER_TIMEOUT_MS=12000`, `SCRAPE_CONCURRENCY=3`. After Vercel is up, lock CORS:
 
-**Memory + CPU:** Chromium ≈ 250–300 MB + Node ≈ 100 MB on a 512 MB free instance. CPU is throttled to **0.1 CPU** which makes `page.goto` slow; the first deploy returned `count: 0` because the default 12 s scraper budget wasn't enough. The current `render.yaml` bakes `SCRAPER_TIMEOUT_MS=25000` and `SCRAPE_CONCURRENCY=2` for this reason. If you upgrade to **Starter ($7/mo, 0.5 CPU)**, drop the timeout back to ~12000 and raise concurrency to 3.
+```sh
+fly secrets set ALLOWED_ORIGIN=https://your-vercel-url.vercel.app
+```
 
-**Resource blocking:** `browser.js` aborts image/media/font requests inside Playwright contexts — we never inspect them anyway and they were ~80 % of the bytes per page on slow hosts.
+**Why Tokyo, not Singapore:** PayPay geo-blocks non-JP IPs intermittently; Tokyo IPs always pass. Mercari/Yahoo navigation also drops from ~80 ms to ~2 ms RTT.
+
+### Backend → Render (alternative / current)
+
+```sh
+# Blueprint flow
+# Render dashboard → New → Blueprint → pick neotruong/emthao-jp-search
+# It reads backend/render.yaml (Docker, Singapore, free)
+```
+
+`render.yaml` bakes `SCRAPER_TIMEOUT_MS=25000` and `SCRAPE_CONCURRENCY=2` to survive 0.1 CPU + 512 MB. Set `ALLOWED_ORIGIN` to the Vercel URL after frontend deploy.
+
+**Why migrating away:** the first prod deploy returned `count: 0` because Render free's 0.1 CPU couldn't finish 3 parallel `page.goto` calls in 12 s. Even with the larger 25 s budget, scrape latency is 8–15 s — Fly Tokyo gets it back to 2–4 s. PayPay also stays geo-blocked from Singapore.
+
+#### Backend host migration (Render → Fly.io)
+
+`INFRA.local.md` (gitignored) has the full step-by-step. tl;dr: install flyctl, `fly deploy` from `backend/`, retest, repoint Vercel `VITE_API_BASE_URL`, suspend the Render service.
+
+**Resource blocking:** `browser.js` aborts image/media/font requests inside Playwright contexts — applied identically on both hosts. Saves 70–80 % of the bytes per page on every scrape.
 
 ### Frontend → Vercel
 

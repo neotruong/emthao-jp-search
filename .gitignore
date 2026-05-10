@@ -20,3 +20,8 @@ Thumbs.db
 
 # Claude Code per-machine settings (project briefing in .claude/Claude.MD IS committed)
 .claude/settings.local.json
+
+# Personal infrastructure / runbook notes — anything ending in `.local.md`
+# stays local. Use this for ops cheatsheets, secret-y URLs, etc.
+*.local.md
+*.local.txt

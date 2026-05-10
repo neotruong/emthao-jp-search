@@ -1,0 +1,57 @@
+# Fly.io app config — deploy from `backend/` with `flyctl deploy`.
+# Region nrt (Tokyo) is deliberate: it removes PayPay's geo-block and cuts
+# Mercari/Yahoo navigation latency from ~80 ms (Singapore) to ~2-3 ms
+# (in-region). With ~1 vCPU/1 GB we can also raise concurrency and lower
+# the per-scraper timeout back to localhost-class budgets.
+#
+# Replace `app` if "emthaojp-backend" is taken in the global Fly namespace.
+
+app = "emthaojp-backend"
+primary_region = "nrt"
+kill_signal = "SIGINT"
+kill_timeout = "15s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Non-secret env vars. Anything sensitive (none today) goes via
+# `flyctl secrets set KEY=value`. ALLOWED_ORIGIN gets set after Vercel
+# is up; until then "*" is fine for an internal tool.
+[env]
+  NODE_ENV = "production"
+  PORT = "8787"
+  LOG_LEVEL = "info"
+  # Tokyo region + 1 shared vCPU is much faster than Render free's
+  # 0.1 CPU + Singapore. Back to localhost-class scrape budgets.
+  SCRAPER_TIMEOUT_MS = "12000"
+  SCRAPE_CONCURRENCY = "3"
+  ALLOWED_ORIGIN = "*"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # Scale-to-zero: machines suspend after a few minutes idle, then auto-
+  # restart on the next request. ~5-15 s cold start (much better than
+  # Render free's 30-60 s because Fly's image cache is warmer + 1 vCPU
+  # boots Chromium quickly).
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "20s"     # give Chromium time to launch before health-checking
+    interval     = "30s"
+    method       = "GET"
+    path         = "/health"
+    protocol     = "http"
+    timeout      = "5s"
+
+# 1 vCPU / 1 GB — sweet spot for Playwright on Fly. Per the pricing page
+# (2026), a shared-cpu-1x@1024MB machine billed only for runtime (most of
+# the day idle) lands around $3-5/mo for low-volume scraping. If memory
+# pressure shows up in `flyctl logs` (OOMKilled), bump memory_mb to 2048
+# (~$6-8/mo).
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpus = 1
