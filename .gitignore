@@ -1,0 +1,22 @@
+# Top-level gitignore — sub-workspaces have their own.
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+
+# IDE / editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Misc / OS
+Thumbs.db
+.cache/
+.tmp/
+
+# GitNexus index — local code-intel artefacts
+.gitnexus/
+
+# Claude Code per-machine settings (project briefing in .claude/Claude.MD IS committed)
+.claude/settings.local.json

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: emthaojp-backend
+    env: docker
+    plan: free
+    region: singapore
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8787
+      - key: ALLOWED_ORIGIN
+        sync: false
+      - key: LOG_LEVEL
+        value: info

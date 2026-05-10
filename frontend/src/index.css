@@ -1,0 +1,15 @@
+/* Vite default styles cleared — App.css owns all layout. */
+:root {
+  color-scheme: light dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+body, html, #root { margin: 0; padding: 0; }
+
+a { color: inherit; }
+button { font-family: inherit; }
+img { display: block; max-width: 100%; }

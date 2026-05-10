@@ -1,0 +1,6 @@
+module.exports = {
+  JPY_VND_RATE: 185,
+  MARKUP_PCT: 20,
+  SHIP_VND_PER_KG: 175000,
+  DEFAULT_WEIGHT_KG: 0.2,
+};
