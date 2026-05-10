@@ -1,71 +1,109 @@
 # EmThaoJPSearch
 
-Internal Japanese marketplace search aggregator (Mercari + Yahoo Auctions + PayPay Flea Market).
+Internal Japanese marketplace search aggregator: one keyword → unified results from **Mercari**, **Yahoo Auctions**, and **PayPay Flea Market**, with both JPY and VND prices on every card.
 
-Spec: `Requirements/`
-Plan: `~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md`
+| | |
+|---|---|
+| **Repo** | https://github.com/neotruong/emthao-jp-search |
+| **Backend** | Render free (Singapore) — _set after deploy_ |
+| **Frontend** | Vercel free — _set after deploy_ |
+| **Status** | Phase 1 done ✅ (deployed 2026-05-10). Phases 2–5 in `Plan.md` |
+
+Spec: `Requirements/` · Resumption doc: `Plan.md` · Project briefing: `.claude/Claude.MD` · Multi-phase plan: `~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md`
 
 ## Layout
 
-- `backend/` — Node 20 + Express + Playwright. Deploys to Render (free).
-- `frontend/` — Vite + React (Phase 1, *not built yet*). Deploys to Vercel.
+- `backend/` — Node 20 + Express + Playwright → Render (Docker)
+- `frontend/` — Vite + React (English UI) → Vercel
+- `Requirements/` — feature specs (`local-bookmarks.md`, `search-extras.md`)
+- `backend/src/scrapers/{mercari,yahoo,paypay}.skill.md` — per-source mechanism + maintenance lessons
 
-## Backend dev
+## Local dev
 
 ```bash
+# Backend
 cd backend
 npm install
-npx playwright install chromium
-cp .env.example .env
-npm run dev
+npx playwright install chromium     # one-time
+cp -n .env.example .env
+npm run dev                         # :8787
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+cp -n .env.example .env
+npm run dev                         # :5173
 ```
 
-### Verify boot
+Open `http://localhost:5173`.
+
+### Backend smoke
 
 ```bash
 curl http://localhost:8787/health
-# → {"status":"ok","cacheEntries":0,"browserConnected":true}
-```
+# → {"status":"ok","cacheEntries":N,"browserConnected":true}
 
-### Verify search across all 3 sources
+curl -s 'http://localhost:8787/search?q=iphone&limit=3' \
+  | jq '{count, cached, sources, first: .results[0] | {source, price, title}}'
 
-```bash
-curl -s 'http://localhost:8787/search?q=fan&yahooMode=all' \
-  | jq '{count, perSource: (.results | group_by(.source) | map({source: .[0].source, n: length}))}'
-```
-
-### Per-source check
-
-```bash
-curl -s 'http://localhost:8787/search?q=iphone&sources=mercari'  | jq '.count, .results[0]'
-curl -s 'http://localhost:8787/search?q=iphone&sources=yahoo&yahooMode=fixed' | jq '.count, .results[0]'
-curl -s 'http://localhost:8787/search?q=iphone&sources=paypay'   | jq '.count, .results[0]'
-```
-
-### Cache hit
-
-```bash
+# Cache hit (run twice within 7 min)
 curl -s 'http://localhost:8787/search?q=test' | jq '.cached'  # false
-curl -s 'http://localhost:8787/search?q=test' | jq '.cached'  # true (within 7 min)
+curl -s 'http://localhost:8787/search?q=test' | jq '.cached'  # true
+
+# Pagination + cache bypass
+curl -s 'http://localhost:8787/search?q=iphone&page=2'         | jq '.count'
+curl -s 'http://localhost:8787/search?q=iphone&nocache=1'      | jq '.cached'  # always false
 ```
 
-## Backend deploy (Render)
+### End-to-end smoke (browser-driven)
 
-1. Push the repo to GitHub.
-2. Render → New Web Service → connect repo → it picks up `backend/render.yaml` (Docker, free plan).
-3. Set `ALLOWED_ORIGIN` to the Vercel URL once the frontend is up.
+`backend/scripts/smoke-frontend.js` drives the running stack with Playwright through search → pagination → filters → bookmark → history → reload-persistence.
 
-**Cold-start expectation:** Render free sleeps after 15 min idle. First request after sleep takes ~30–60s while the dyno spins up + warms Chromium.
+```bash
+cd backend && node scripts/smoke-frontend.js
+```
 
-## Scraper notes (Phase 1)
+## Production deploy
 
-- **Mercari** intercepts `https://api.mercari.jp/v2/entities:search` JSON response and reads canonical JPY prices + condition codes. We do *not* DOM-scrape the listing cards because Mercari sets a `country_code` cookie from the request's geo-IP (e.g. `VN` from a Vietnam connection) and renders localized prices in the DOM (¥4,800 displays as VND855,500). The API ignores the localization.
-- **Yahoo Auctions** uses DOM scraping on `.Product` BEM classes. The mode (auction vs fixed-price) is taken from the request's `yahooMode` param when filtered, since the Yahoo URL filter (`fixed=1` / `fixed=2`) guarantees that every returned listing is the requested mode.
-- **PayPay Flea Market** is **geo-blocked outside Japan**. Both your local dev IP (Vietnam) and Render's Singapore region will see the page render `「データの取得に失敗しました」` (Data retrieval failed) and fall back to generic "あなたへのおすすめ" (recommendations). The scraper detects this state and returns `[]` rather than polluting results with unrelated items. Real PayPay results require a JP residential proxy → tracked for **Phase 5**.
+### Backend → Render
+
+1. Push to `main`.
+2. **Render → New → Blueprint** → connect `neotruong/emthao-jp-search` → it reads `backend/render.yaml` (Docker, Singapore, free plan).
+3. Set `ALLOWED_ORIGIN` env to the Vercel URL once the frontend is up. Until then, `*` is fine.
+
+**Cold start:** Render free sleeps after 15 min idle. First request after sleep takes ~30–60 s while the Docker container wakes and Chromium warms.
+
+**Memory:** Chromium ≈ 250–300 MB + Node ≈ 100 MB on a 512 MB free instance. One concurrent search safe; if you hit `OOMKilled` in Render logs, upgrade to **Starter ($7/mo)**.
+
+### Frontend → Vercel
+
+1. **Vercel → Add New → Project** → import the same GitHub repo.
+2. **Root Directory:** `frontend`.
+3. Env: `VITE_API_BASE_URL = https://<your-render-url>.onrender.com`.
+4. Build/output are Vite defaults (`npm run build` → `dist`).
+5. After first deploy, copy the Vercel URL back into Render's `ALLOWED_ORIGIN`.
+
+## How the scrapers work (one-liners)
+
+- **Mercari** — intercepts the JSON API at `https://api.mercari.jp/v2/entities:search` and reads canonical JPY prices and condition codes. DOM scraping is unreliable because Mercari sets a `country_code` cookie from the request's geo-IP (e.g. `VN` from a Vietnam connection) and renders prices in local currency in the DOM. The scraper also drops items that aren't `ITEM_STATUS_ON_SALE` and skips Mercari Beyond/Shops items (those `P9oQg…`-style IDs that 404 on click).
+- **Yahoo Auctions** — DOM scrape on `li.Product`. Mode (auction vs fixed-price) is taken from the request's `yahooMode` param because the Yahoo URL filter (`fixed=1` / `fixed=2`) guarantees every returned listing matches. Pagination via `&b=<offset>&n=<limit>`.
+- **PayPay Flea Market** — geo-blocked outside Japan. Render Singapore IPs hit the same `「データの取得に失敗しました」` page that local dev does and fall back to generic recommendations. The scraper detects this state and returns `[]` rather than polluting results. Phase 5 residential proxy will fix it.
+
+Detailed mechanism + selectors + maintenance signals per scraper in
+`backend/src/scrapers/{mercari,yahoo,paypay}.skill.md`.
 
 ## Known limitations (Phase 1)
 
-- PayPay returns 0 results from non-JP IPs (see above). Plan to fix in Phase 5 with Webshare proxies.
-- Cache is in-memory (`lru-cache`), so it resets on every backend restart. Phase 2 swaps to Upstash Redis.
-- No retry logic inside scrapers yet — Phase 2.
-- Frontend not yet built — Phase 1 step 6.
+- **PayPay** returns 0 results from non-JP IPs (Render Singapore included). Phase 5 residential proxy fixes this.
+- **In-memory cache** resets on every backend restart. Phase 2 → Upstash Redis behind the same `cache.js` interface.
+- **Filters are client-side** (price min/max, condition pills, JPY/VND toggle). Phase 2 promotes them to backend `?price_min/max/condition` params.
+- **Per-scraper retry** is frontend-only (3-attempt backoff). Phase 2 adds in-scraper retry.
+
+## Phases 2 – 5
+
+Roadmap in `Plan.md` and the canonical plan. Highlights:
+
+- **Phase 2** (~$5/mo) — Upstash Redis, server-side filters, scraper retry, structured log metrics.
+- **Phase 3** (~$10/mo) — FastAPI + CLIP + Qdrant for image search; nightly indexer.
+- **Phase 4** (~$10/mo) — Clerk auth + Neon Postgres; sync local bookmarks/history to cloud; price-drop email alerts via Resend.
+- **Phase 5** (~$15/mo) — Webshare residential JP proxy (unblocks PayPay), Redis rate limiting, Grafana Cloud dashboard.

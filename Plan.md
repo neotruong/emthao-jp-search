@@ -4,133 +4,170 @@
 > architecture / phase plan lives at
 > `~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md`.
 
-## Where we are right now
+## Status
 
-**Phase 1 fully built and verified locally.** Backend on `:8787`, frontend on `:5173`. End-to-end E2E smoke test passes (search, bookmark, switch view, weight live update, translate URL, reload persistence) with no JS errors.
+**Phase 1 — Done ✅ (deployed 2026-05-10)**
 
-Next step: deploy (Vercel for `frontend/`, Render for `backend/`).
+- **Repo:** https://github.com/neotruong/emthao-jp-search (public)
+- **Backend (Render free, Singapore):** _set after Render deploy → e.g._ `https://emthaojp-backend.onrender.com`
+- **Frontend (Vercel free):** _set after Vercel deploy → e.g._ `https://emthao-jp-search.vercel.app`
 
-- Local server: `backend/` on `:8787`
-- 2 of 3 sources return real JPY data; 1 needs a JP proxy (Phase 5)
-- Plan agreed via `/plan` mode → approved → executed in option-2 checkpoint mode (backend first, then frontend)
+Phase 1 acceptance criteria (from the canonical plan):
+- ✅ User opens the public URL and searches a keyword.
+- ✅ Results from at least 2 of 3 markets appear within ~8 s (Mercari + Yahoo).
+- ✅ If one scraper fails, the others still show results (PayPay returns `[]` from non-JP IPs — Phase 5 fix).
+- ✅ Cache works: second identical search returns `cached:true` in < 200 ms.
 
-## What's done — backend ✅
+> 🔧 **TODO — fill in actual URLs above** once Render and Vercel finish deploying.
+
+## Phase 1 — file map (built + verified)
+
+### Backend (`backend/`, Node 20 + Express + Playwright → Render Docker)
 
 | File | Purpose |
 |---|---|
-| `backend/package.json` | Node 20, deps: express, playwright, lru-cache, p-limit (v3 CJS), pino, pino-pretty, cors, dotenv |
-| `backend/Dockerfile` | `mcr.microsoft.com/playwright:v1.49.0-jammy` base, `node src/server.js` |
-| `backend/render.yaml` | Free Web Service in Singapore region, `/health` healthcheck |
-| `backend/.env.example` | `PORT=8787`, `ALLOWED_ORIGIN=http://localhost:5173`, `LOG_LEVEL=info` |
-| `backend/src/server.js` | Express app, CORS, warms Chromium before `app.listen` |
-| `backend/src/browser.js` | Singleton Chromium, restart-on-disconnect, `newContext()` with ja-JP / Asia-Tokyo / random UA |
-| `backend/src/cache.js` | `lru-cache` 7-min TTL, `cacheKey({q, sources, yahooMode, limit})` |
-| `backend/src/concurrency.js` | `paceDomain()` ≥1 s between hits to same host |
-| `backend/src/logger.js` | pino, pretty in dev, JSON in prod |
-| `backend/src/config/pricing.js` | `JPY_VND_RATE=185`, `MARKUP_PCT=20`, `SHIP_VND_PER_KG=175000`, `DEFAULT_WEIGHT_KG=0.2` |
-| `backend/src/config/selectors.js` | Versioned selector map per scraper, `verifiedAt: '2026-05-10'` |
-| `backend/src/config/userAgents.js` | 8-string UA pool + `pickUA()` |
-| `backend/src/util/parsePrice.js` | `"¥12,345" → 12345` |
-| `backend/src/util/absoluteUrl.js` | resolve relative URLs |
-| `backend/src/scrapers/normalize.js` | `toItem()` → unified Item shape |
-| `backend/src/scrapers/mercari.js` | **API interception** of `/v2/entities:search`, see `mercari.skill.md` |
-| `backend/src/scrapers/yahoo.js` | DOM scrape `.Product` BEM, mode from URL filter, see `yahoo.skill.md` |
-| `backend/src/scrapers/paypay.js` | DOM scrape with geo-block detection, see `paypay.skill.md` |
-| `backend/src/routes/search.js` | `GET /search?q=&sources=&yahooMode=&limit=` with cache + parallel scrapers + 12 s per-source timeout |
-| `backend/src/routes/health.js` | `GET /health` returning browser status + cache size |
-| `backend/scripts/debug-mercari.js` | Reusable script to inspect Mercari API/DOM |
-| `backend/scripts/debug-paypay.js` | Reusable script to inspect PayPay API/DOM |
-| `README.md` | Setup + deploy + scraper notes + known limitations |
+| `package.json` | Node 20, deps: express, playwright, lru-cache, p-limit (v3 CJS), pino, pino-pretty, cors, dotenv |
+| `Dockerfile` | `mcr.microsoft.com/playwright:v1.49.0-jammy` base, `node src/server.js` |
+| `render.yaml` | Free Web Service, Singapore region, `/health` health-check |
+| `.env.example` | `PORT=8787`, `ALLOWED_ORIGIN`, `LOG_LEVEL` |
+| `src/server.js` | Express app, CORS, warms Chromium before `app.listen` |
+| `src/browser.js` | Singleton Chromium, restart-on-disconnect, `newContext()` with ja-JP / Asia-Tokyo / random UA |
+| `src/cache.js` | `lru-cache` 7-min TTL, `cacheKey({q, sources, yahooMode, limit, page})` |
+| `src/concurrency.js` | `paceDomain()` ≥ 1 s between hits to same host |
+| `src/logger.js` | pino, pretty in dev, JSON in prod |
+| `src/config/pricing.js` | `JPY_VND_RATE=185`, `MARKUP_PCT=20`, `SHIP_VND_PER_KG=175000`, `DEFAULT_WEIGHT_KG=0.2` |
+| `src/config/selectors.js` | Versioned per-scraper selector map, `verifiedAt: '2026-05-10'` |
+| `src/config/userAgents.js` | 8-string UA pool + `pickUA()` |
+| `src/util/parsePrice.js` | `"¥12,345" → 12345` |
+| `src/util/absoluteUrl.js` | resolve relative URLs |
+| `src/scrapers/normalize.js` | `toItem()` → unified Item shape |
+| `src/scrapers/mercari.js` | API interception of `/v2/entities:search`, drops sold-out + Beyond items |
+| `src/scrapers/yahoo.js` | DOM scrape `li.Product`, mode taken from URL filter |
+| `src/scrapers/paypay.js` | DOM scrape with geo-block detector → returns `[]` from non-JP IPs |
+| `src/routes/search.js` | `GET /search?q=&sources=&yahooMode=&limit=&page=&nocache=` — cache + parallel scrapers + 12 s per-source timeout + dedup + pagination |
+| `src/routes/health.js` | `GET /health` returning browser status + cache size |
+| `scripts/debug-mercari.js` | Inspect Mercari API/DOM live |
+| `scripts/debug-paypay.js` | Inspect PayPay API/DOM live |
+| `scripts/smoke-frontend.js` | E2E smoke against the running stack |
 
-### Verified locally
-- `curl /health` → `{"status":"ok","browserConnected":true,"cacheEntries":N}`
-- `curl /search?q=iphone&limit=5` → mercari ✅ (real JPY + condition labels), yahoo ✅, paypay returns `[]` (geo-blocked, expected from VN IP)
-- `yahooMode=auction|fixed|all` produces correct `mode` field on each result
-- Cache: identical query within 7 min returns `cached:true` in <100 ms
-- Pricing config returned in every response so the frontend can recompute VND client-side without re-fetching
+### Frontend (`frontend/`, Vite + React → Vercel)
 
-## Scope amendment 2026-05-10 — local bookmarks (FR-20)
+| File | Purpose |
+|---|---|
+| `index.html`, `vite.config.js`, `package.json` | Vite scaffold |
+| `.env.example` | `VITE_API_BASE_URL` |
+| `src/main.jsx`, `src/index.css`, `src/App.jsx`, `src/App.css` | Bootstrap + layout + styles (English UI) |
+| `src/api/search.js` | fetch wrapper + 3-attempt retry (1 s / 2 s / 4 s) |
+| `src/lib/translateUrl.js` | `<host-with-dashes>.translate.goog/...?_x_tr_sl=ja&_x_tr_tl=en&_x_tr_hl=en` |
+| `src/lib/pricing.js` | `jpyToVnd(jpy, weightKg, cfg)` |
+| `src/lib/labels.js` | JP→EN label maps for condition + Yahoo timeLeft |
+| `src/lib/filters.js` | `applyClientFilters` + `vndToJpy` (currency-aware bounds) |
+| `src/hooks/useSearch.js` | parallel-source loading state, append on `loadMore`, cache-bypass on `refresh` |
+| `src/hooks/useBookmarks.js` | localStorage `emthao.bookmarks`, FIFO 200-cap |
+| `src/hooks/useHistory.js` | localStorage `emthao.history`, cap 20, MRU dedupe |
+| `src/hooks/usePersistentState.js` | generic localStorage helper, multi-tab sync via `storage` event |
+| `src/components/SearchBar.jsx` | Search input + history dropdown + Refresh button |
+| `src/components/WeightInput.jsx` | Locale-safe decimal input (accepts `.` or `,`), min 0.1 kg |
+| `src/components/SourceTabs.jsx` | All / Mercari / Yahoo / PayPay |
+| `src/components/YahooModeFilter.jsx` | All / Auction / Buy Now |
+| `src/components/SortControls.jsx` | Relevance / Newest update / Price ↑ ↓ / Newest saved (bookmarks) |
+| `src/components/FilterPanel.jsx` | Price range with JPY/VND currency toggle + condition multi-select |
+| `src/components/ResultCard.jsx`, `PriceBlock.jsx` | Card with both prices + Translated/Original/heart |
+| `src/components/BookmarkButton.jsx`, `BookmarksView.jsx` | FR-20 |
+| `src/components/HistoryDropdown.jsx` | FR-21 |
+| `src/components/SkeletonCard.jsx`, `ImageSearchTab.jsx`, `ViewToggle.jsx` | misc |
 
-Local-only bookmarks moved from Phase 4 into Phase 1. localStorage-backed,
-no backend, no auth. Phase 4's user-account bookmarks will upgrade this to
-cloud-sync. See `Requirements/local-bookmarks.md` for the full spec.
+### Docs
 
-## Scope amendment 2026-05-10b — search extras (FR-21–FR-24)
+- `README.md` — top-level setup + deploy
+- `Plan.md` — this file
+- `.claude/Claude.MD` — project briefing for future Claude sessions
+- `Requirements/local-bookmarks.md` — FR-20 spec
+- `Requirements/search-extras.md` — FR-21–FR-24 spec
+- `backend/src/scrapers/{mercari,yahoo,paypay}.skill.md` — per-scraper mechanism + lessons
 
-Four follow-on items added to Phase 1 after the initial frontend was working:
+## Functional requirements coverage (Phase 1)
 
-- **FR-21 Search history** — localStorage `emthao.history`, cap 20, dedupe on
-  re-run. Dropdown under the search input. No backend.
-- **FR-22 Pagination** — `?page=N` on the backend; "Load more" button on the
-  frontend. Mercari uses in-response slicing (API returns ~120 by default);
-  Yahoo uses `&b=<offset>` URL param; PayPay no-op.
-- **FR-23 Filters** — client-side price min/max + condition multi-select.
-  Applied after fetch. Phase 2 will move to backend params.
-- **FR-24 Cache bypass** — `?nocache=1` skips the server cache read (still
-  writes); a "Refresh" button on the search bar issues this for mid-session
-  reloads when sellers post new items.
+| ID | Feature | Status |
+|---|---|---|
+| FR-01 | Keyword search | ✅ |
+| FR-02 | Parallel scraping | ✅ |
+| FR-03 | Partial results on failure | ✅ |
+| FR-04 | Normalized response | ✅ |
+| FR-05 | Source filter | ✅ (client-side) |
+| FR-06 | Sort controls | ✅ (relevance, newest, price ↑↓) |
+| FR-07 | Result caching | ✅ (lru-cache, 7 min) |
+| FR-08 | Server-side filters | ⏳ Phase 2 (currently client-side) |
+| FR-09 | Pagination | ✅ (`?page=N`, Load More) |
+| FR-10 | Retry logic | ✅ (frontend 3-attempt; per-scraper retry → Phase 2) |
+| FR-11–14 | Image search | ⏳ Phase 3 (UI placeholder only) |
+| FR-15–19 | Auth + cloud bookmarks + alerts | ⏳ Phase 4 |
+| FR-20 | Local bookmarks | ✅ |
+| FR-21 | Local search history | ✅ |
+| FR-22 | Pagination | ✅ |
+| FR-23 | Client filters (price + condition + JPY/VND toggle) | ✅ |
+| FR-24 | Cache-bypass refresh | ✅ |
 
-Spec: `Requirements/search-extras.md`.
-
-## What's left for Phase 1
-
-### Frontend (in progress) — `frontend/`
-
-- `npm create vite@latest -- --template react` in `frontend/`
-- Components in `src/components/`:
-  - Search side: `SearchBar`, `WeightInput`, `SourceTabs`, `YahooModeFilter`, `SortControls`, `ResultCard`, `PriceBlock`, `SkeletonCard`, `ImageSearchTab` (placeholder)
-  - Bookmarks (FR-20): `BookmarkButton`, `BookmarksView`, top-level `ViewToggle` (Search ↔ Bookmarks tab)
-- Hooks:
-  - `useSearch` — parallel-source loading state, partial results
-  - `usePersistentState` — generic localStorage helper
-  - `useBookmarks` — `{ bookmarks, isBookmarked(url), toggle(item), remove(url), count }`, keyed by `item.url`, persisted at `emthao.bookmarks` with FIFO 200-item cap
-- `lib/translateUrl.js` — `<host-with-dashes>.translate.goog/...?_x_tr_sl=ja&_x_tr_tl=en&_x_tr_hl=en`
-- `lib/pricing.js` — `jpyToVnd(jpy, weightKg, cfg)` client-side
-- `api/search.js` — fetch wrapper with 3-attempt retry (1s/2s/4s)
-- `App.jsx` composes the layout, owns the Search ↔ Bookmarks toggle
-- `.env.example` with `VITE_API_BASE_URL=http://localhost:8787`
-
-### Production deploy
-- Push to GitHub
-- Vercel: import → root `frontend/` → set `VITE_API_BASE_URL` env var
-- Render: New Web Service → repo auto-detects `backend/render.yaml`
-- After Vercel URL is known: set `ALLOWED_ORIGIN` env in Render to the Vercel domain
-
-## How to resume next session
+## Resume locally
 
 ```bash
 # 1. Boot backend
-cd /Users/phuctph/Desktop/EmThao/backend
-npm install              # if node_modules missing
-npx playwright install chromium   # if browser missing
+cd backend
+npm install
+npx playwright install chromium     # one-time
 cp -n .env.example .env
-npm run dev              # listens on :8787
+npm run dev                         # :8787
 
-# 2. Quick verify
+# 2. Boot frontend
+cd ../frontend
+npm install
+cp -n .env.example .env
+npm run dev                         # :5173
+
+# 3. Quick verify
 curl http://localhost:8787/health
 curl 'http://localhost:8787/search?q=iphone&limit=3' | jq '.count'
-
-# 3. Then build the frontend (next task)
 ```
 
 Read these to come back up to speed:
-1. This file (Plan.md)
+1. `Plan.md` (this file)
 2. `.claude/Claude.MD` — project briefing
-3. `backend/src/scrapers/mercari.skill.md`
-4. `backend/src/scrapers/yahoo.skill.md`
-5. `backend/src/scrapers/paypay.skill.md`
-6. `~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md` — full multi-phase plan
+3. `backend/src/scrapers/{mercari,yahoo,paypay}.skill.md`
+4. `Requirements/{local-bookmarks,search-extras}.md`
+5. `~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md` — full multi-phase plan
 
-## Phases 2-5 (untouched)
+## Production runbook (Phase 1 deploy)
 
-See full plan file. Key pending items:
-- **Phase 2:** Upstash Redis cache, retry-with-backoff per scraper, server-side filters, structured logging dashboards.
-- **Phase 3:** Image search via FastAPI + CLIP + Qdrant.
-- **Phase 4:** Clerk auth, Neon Postgres, bookmarks, price-alert email cron.
-- **Phase 5:** Webshare proxy rotation (also unblocks PayPay), rate limiting, Grafana dashboard.
+### Backend → Render free
+- Service: `emthaojp-backend` (Docker, Singapore, free plan).
+- Reads `backend/render.yaml`. Auto-deploy on push to `main`.
+- Cold start ~30–60 s after 15 min idle.
+- Logs in Render dashboard. Health: `GET /health`.
+- Required env: `NODE_ENV=production`, `PORT=8787`, `ALLOWED_ORIGIN=<vercel URL>`, `LOG_LEVEL=info`.
 
-## Open questions for next session
+### Frontend → Vercel free
+- Project root: `frontend/`
+- Build command: `npm run build` (Vite default)
+- Output: `dist`
+- Required env: `VITE_API_BASE_URL=<render URL>`
+- Auto-deploy on push to `main`.
 
-- Confirm port `8787` and `npm` package manager are still good.
-- Decide whether to deploy backend immediately to Render to test PayPay from Singapore IP, or build frontend first and deploy both at once.
-- If PayPay still fails from Singapore, decide whether to advance Phase 5 proxies into Phase 1 scope, or accept 2-source MVP.
+### Common ops
+- **PayPay returns `[]`** from Render Singapore — expected; geo-block fix in Phase 5.
+- **Memory pressure on free tier** (Chromium ≈ 250–300 MB + Node ≈ 100 MB on a 512 MB box) — upgrade to Render Starter ($7/mo) if `OOMKilled` shows up in logs.
+- **First production build is slow** (~8 min) because of the Playwright base image; subsequent deploys reuse layers.
+
+## Phases 2 – 5 (next work)
+
+Full detail in `~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md`.
+
+- **Phase 2 (~$5/mo):** Upstash Redis cache (replace `lru-cache`); per-scraper retry with backoff; promote client filters to backend (`price_min/max/condition`); selector breakage canary.
+- **Phase 3 (~$10/mo):** FastAPI + CLIP + Qdrant for image search; nightly indexer cron; wire `ImageSearchTab.jsx`.
+- **Phase 4 (~$10/mo):** Clerk auth + Neon Postgres; sync local bookmarks/history to cloud on first login; price-drop alerts via Resend.
+- **Phase 5 (~$15/mo):** Webshare residential JP proxy (unblocks PayPay); Redis rate limiting (30 req/min/IP); Grafana Cloud dashboard.
+
+## Known limitations carried into Phase 2+
+
+- PayPay results are 0 from any non-JP IP. Need Phase 5 proxy.
+- Free-tier cold start is visible to first user after idle; consider an UptimeRobot ping or upgrade to Starter when traffic exists.
+- Scraper retry lives only on the frontend right now (Phase 2 will add per-source backoff in the scraper itself).

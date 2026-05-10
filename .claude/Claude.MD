@@ -7,17 +7,22 @@ displayed with both JPY and VND prices.
 ## Stack and layout
 
 - Monorepo, two siblings: `backend/` (Node 20 + Express + Playwright) and
-  `frontend/` (Vite + React, *not built yet*).
-- Backend deploys to **Render free Web Service**. Frontend to **Vercel free**.
+  `frontend/` (Vite + React).
+- Backend deploys to **Render free Web Service** (Docker runtime). Frontend to **Vercel free**.
 - CommonJS in backend (`require/module.exports`). Don't switch to ESM without a reason.
-- Package manager: **npm**. Node 20+ required (`node --watch` used for dev).
+- Frontend is ESM (Vite default). React 19. Plain CSS (no Tailwind/CSS-in-JS).
+- Package manager: **npm** in both. Node 20+ required (`node --watch` used for dev).
+- Repo: https://github.com/neotruong/emthao-jp-search (public).
 
-## What's built
+## Status
 
-Backend Phase 1 is complete and verified locally on `:8787`. See `Plan.md` at
-project root for a file-by-file map and resumption commands.
+**Phase 1 — Done ✅ (deployed 2026-05-10).** Both backend and frontend are
+built, smoke-tested, committed, and deploying. See `Plan.md` for the file
+map, FR coverage table, and production runbook (URLs are filled in there).
 
-Frontend has not been started yet — that's the next task.
+Phases 2–5 (Redis cache, server-side filters, image search, auth + cloud
+sync, residential proxy) live in
+`~/.claude/plans/1-project-summary-emthaojpsearch-jiggly-fern.md`.
 
 ## Key context for future sessions
 
