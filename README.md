@@ -20,6 +20,26 @@ Spec: `Requirements/` · Resumption doc: `Plan.md` · Project briefing: `.claude
 
 ## Local dev
 
+### One-command (recommended)
+
+```bash
+./start.sh
+```
+
+First run installs both workspaces, downloads Playwright Chromium, and copies the `.env` files. Subsequent runs just boot both servers in parallel (Ctrl+C stops both). Requires Node 20+.
+
+Open `http://localhost:5173` once the BACK / FRONT panels print "listening".
+
+Equivalent npm flow if you prefer:
+
+```bash
+npm install          # one-time, installs concurrently
+npm run setup        # one-time, installs both workspaces + Playwright + .env files
+npm run dev          # any time, runs backend (:8787) + frontend (:5173) concurrently
+```
+
+### Manual (two terminals)
+
 ```bash
 # Backend
 cd backend

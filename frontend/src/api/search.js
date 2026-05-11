@@ -44,3 +44,17 @@ export async function getHealth() {
   const resp = await fetch(`${BASE}/health`);
   return resp.json();
 }
+
+// Fire-and-forget: drop every cached entry for this query on the backend.
+// Failures are swallowed — history is removed locally regardless.
+export async function invalidateCache(q) {
+  if (!q) return { removed: 0 };
+  try {
+    const url = `${BASE}/search/cache?q=${encodeURIComponent(q)}`;
+    const resp = await fetch(url, { method: 'DELETE' });
+    if (!resp.ok) return { removed: 0 };
+    return await resp.json();
+  } catch {
+    return { removed: 0 };
+  }
+}

@@ -2,7 +2,7 @@ const express = require('express');
 const pLimit = require('p-limit');
 const { logger } = require('../logger');
 const { newContext } = require('../browser');
-const { cache, cacheKey } = require('../cache');
+const { cache, cacheKey, deleteByQuery } = require('../cache');
 const pricing = require('../config/pricing');
 const mercari = require('../scrapers/mercari');
 const yahoo = require('../scrapers/yahoo');
@@ -136,6 +136,17 @@ router.get('/search', async (req, res) => {
   } finally {
     await context.close().catch(() => {});
   }
+});
+
+// Invalidate every cached entry for a query. Wired to the frontend's "remove from
+// recent searches" action so deleting a history item also flushes its server cache.
+router.delete('/search/cache', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Missing query param: q' });
+  if (q.length > 100) return res.status(400).json({ error: 'Query too long (max 100 chars)' });
+  const removed = deleteByQuery(q);
+  logger.info({ q, removed }, 'cache invalidated for query');
+  res.json({ q, removed });
 });
 
 module.exports = router;

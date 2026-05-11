@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { usePersistentState } from './usePersistentState';
+import { invalidateCache } from '../api/search';
 
 const KEY = 'emthao.history';
 const MAX = 20;
@@ -20,11 +21,18 @@ export function useHistory() {
   );
 
   const remove = useCallback(
-    (q) => setHistory((prev) => prev.filter((h) => h.q !== q)),
+    (q) => {
+      setHistory((prev) => prev.filter((h) => h.q !== q));
+      invalidateCache(q);
+    },
     [setHistory]
   );
 
-  const clear = useCallback(() => setHistory([]), [setHistory]);
+  const clear = useCallback(() => {
+    const queries = history.map((h) => h.q);
+    setHistory([]);
+    for (const q of queries) invalidateCache(q);
+  }, [history, setHistory]);
 
   return { history, push, remove, clear };
 }

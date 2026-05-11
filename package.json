@@ -1,0 +1,17 @@
+{
+  "name": "emthao-jp-search",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EmThaoJP Search — one-command runner for the backend + frontend workspaces.",
+  "scripts": {
+    "setup": "npm install --prefix backend && npx --prefix backend playwright install chromium && npm install --prefix frontend && node -e \"const fs=require('fs');for(const d of ['backend','frontend']){const e=`${d}/.env`,x=`${d}/.env.example`;if(!fs.existsSync(e)&&fs.existsSync(x)){fs.copyFileSync(x,e);console.log('created',e);}}\"",
+    "dev": "concurrently --kill-others-on-fail --names BACK,FRONT --prefix-colors green,cyan \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "start": "npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

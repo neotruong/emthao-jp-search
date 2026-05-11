@@ -1,31 +1,69 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { searchAll } from '../api/search';
 
 const PAGE_SIZE = 20;
+const SOURCES = ['mercari', 'yahoo', 'paypay'];
+const EMPTY_BUCKETS = { mercari: [], yahoo: [], paypay: [] };
+
+// A "bucket" for a source is an array of pages, where each page is the dedup'd item list
+// returned for that (source, page) tuple. So buckets.mercari[2] = items on Mercari page 3.
+// The All view renders the concatenation of all buckets; single-source views render the
+// selected page from one bucket. Single-source [+] fetches with ?sources=<src>&page=N+1;
+// All-view Load More fetches all sources at page allViewPage+1. Both flows write into
+// the same buckets, so switching tabs never loses fetched data.
+
+function splitBySource(items) {
+  const out = { mercari: [], yahoo: [], paypay: [] };
+  for (const it of items || []) {
+    if (out[it.source]) out[it.source].push(it);
+  }
+  return out;
+}
 
 export function useSearch() {
   const [query, setQuery] = useState('');
   const [yahooMode, setYahooMode] = useState('all');
-  const [page, setPage] = useState(1);
-  const [results, setResults] = useState([]);   // accumulated across pages
+  const [buckets, setBuckets] = useState(EMPTY_BUCKETS);
+  const [exhausted, setExhausted] = useState({ mercari: false, yahoo: false, paypay: false });
+  const [allViewPage, setAllViewPage] = useState(0);
   const [pricing, setPricing] = useState(null);
   const [cached, setCached] = useState(false);
-  const [hasMore, setHasMore] = useState(true); // last page returned items?
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
   const inflightRef = useRef(null);
 
-  const fetchPage = useCallback(
-    async ({ q, yahooMode: ym, pageToFetch, append, nocache }) => {
-      if (!q || !q.trim()) {
-        setQuery('');
-        setResults([]);
-        setError(null);
-        setHasMore(true);
-        return;
-      }
+  const flatResults = useMemo(() => {
+    const out = [];
+    for (const src of SOURCES) for (const page of buckets[src]) for (const it of page) out.push(it);
+    return out;
+  }, [buckets]);
+
+  const counts = useMemo(
+    () => ({
+      mercari: buckets.mercari.reduce((n, p) => n + p.length, 0),
+      yahoo: buckets.yahoo.reduce((n, p) => n + p.length, 0),
+      paypay: buckets.paypay.reduce((n, p) => n + p.length, 0),
+    }),
+    [buckets]
+  );
+
+  const loadedPages = useMemo(
+    () => ({ mercari: buckets.mercari.length, yahoo: buckets.yahoo.length, paypay: buckets.paypay.length }),
+    [buckets]
+  );
+
+  const hasMoreAny = useMemo(
+    () => SOURCES.some((s) => !exhausted[s]),
+    [exhausted]
+  );
+
+  // Run a fetch and feed the result into per-source buckets.
+  // sourcesToFetch: array of source ids (e.g. ['mercari']) or null/undefined for all 3.
+  // mode: 'init' resets buckets to just this page; 'append' pushes onto each affected source.
+  const runFetch = useCallback(
+    async ({ q, ym, sourcesToFetch, pageToFetch, mode, nocache }) => {
       if (inflightRef.current) inflightRef.current.abort();
       const ac = new AbortController();
       inflightRef.current = ac;
@@ -36,7 +74,8 @@ export function useSearch() {
 
       try {
         const res = await searchAll({
-          q: q.trim(),
+          q,
+          sources: sourcesToFetch && sourcesToFetch.length ? sourcesToFetch : undefined,
           yahooMode: ym,
           limit: PAGE_SIZE,
           page: pageToFetch,
@@ -45,22 +84,47 @@ export function useSearch() {
         });
         if (ac.signal.aborted) return;
 
-        const incoming = res?.results || [];
-        // dedupe across pages (in case backend duplicates, defensive)
-        if (append) {
-          setResults((prev) => {
-            const seen = new Set(prev.map((r) => r.url));
-            return [...prev, ...incoming.filter((r) => r.url && !seen.has(r.url))];
+        const bySrc = splitBySource(res?.results);
+        const affected = sourcesToFetch && sourcesToFetch.length ? sourcesToFetch : SOURCES;
+
+        if (mode === 'init') {
+          // Fresh search: seed all 3 buckets with this page's items (or empty arrays).
+          setBuckets({
+            mercari: [bySrc.mercari],
+            yahoo: [bySrc.yahoo],
+            paypay: [bySrc.paypay],
           });
+          setExhausted({
+            mercari: bySrc.mercari.length === 0,
+            yahoo: bySrc.yahoo.length === 0,
+            paypay: bySrc.paypay.length === 0,
+          });
+          setAllViewPage(1);
         } else {
-          setResults(incoming);
+          // Append: push to each affected source's bucket. Dedup across pages by URL.
+          setBuckets((prev) => {
+            const next = { ...prev };
+            for (const src of affected) {
+              const seen = new Set(prev[src].flat().map((r) => r.url));
+              const fresh = bySrc[src].filter((r) => r.url && !seen.has(r.url));
+              next[src] = [...prev[src], fresh];
+            }
+            return next;
+          });
+          setExhausted((prev) => {
+            const next = { ...prev };
+            // Heuristic from old code: < PAGE_SIZE/2 items returned = source has no more.
+            for (const src of affected) {
+              if (bySrc[src].length < PAGE_SIZE / 2) next[src] = true;
+            }
+            return next;
+          });
         }
+
         setQuery(q);
         setYahooMode(ym);
-        setPage(pageToFetch);
         setPricing(res?.pricing || null);
         setCached(!!res?.cached);
-        setHasMore(incoming.length >= PAGE_SIZE / 2); // heuristic: if returned half-page+ assume more
 
         if (res?.pricing) {
           try {
@@ -72,7 +136,11 @@ export function useSearch() {
       } catch (err) {
         if (err.name === 'AbortError') return;
         setError(err.message || 'Search failed');
-        if (!append) setResults([]);
+        if (mode === 'init') {
+          setBuckets(EMPTY_BUCKETS);
+          setExhausted({ mercari: false, yahoo: false, paypay: false });
+          setAllViewPage(0);
+        }
       } finally {
         if (inflightRef.current === ac) {
           setLoading(false);
@@ -85,26 +153,59 @@ export function useSearch() {
   );
 
   const search = useCallback(
-    (q, ym = 'all') => fetchPage({ q, yahooMode: ym, pageToFetch: 1, append: false }),
-    [fetchPage]
+    (q, ym = 'all') => {
+      const trimmed = (q || '').trim();
+      if (!trimmed) {
+        setQuery('');
+        setBuckets(EMPTY_BUCKETS);
+        setExhausted({ mercari: false, yahoo: false, paypay: false });
+        setAllViewPage(0);
+        setError(null);
+        return;
+      }
+      return runFetch({ q: trimmed, ym, sourcesToFetch: null, pageToFetch: 1, mode: 'init' });
+    },
+    [runFetch]
   );
 
   const setMode = useCallback(
     (ym) => {
-      if (query) fetchPage({ q: query, yahooMode: ym, pageToFetch: 1, append: false });
+      if (query) runFetch({ q: query, ym, sourcesToFetch: null, pageToFetch: 1, mode: 'init' });
       else setYahooMode(ym);
     },
-    [fetchPage, query]
+    [runFetch, query]
   );
 
-  const loadMore = useCallback(
-    () => fetchPage({ q: query, yahooMode, pageToFetch: page + 1, append: true }),
-    [fetchPage, query, yahooMode, page]
+  // All-view "Load More": advances global page, fetches all sources, fills every bucket.
+  const loadMore = useCallback(() => {
+    if (!query || !hasMoreAny) return;
+    const next = allViewPage + 1;
+    return runFetch({
+      q: query,
+      ym: yahooMode,
+      sourcesToFetch: null,
+      pageToFetch: next,
+    }).then(() => setAllViewPage(next));
+  }, [runFetch, query, yahooMode, allViewPage, hasMoreAny]);
+
+  // Single-view [+]: fetches the next page for one source only. Pushes onto that bucket.
+  const loadNextSource = useCallback(
+    (source) => {
+      if (!query || exhausted[source]) return;
+      const next = loadedPages[source] + 1;
+      return runFetch({
+        q: query,
+        ym: yahooMode,
+        sourcesToFetch: [source],
+        pageToFetch: next,
+      });
+    },
+    [runFetch, query, yahooMode, exhausted, loadedPages]
   );
 
   const refresh = useCallback(
-    () => fetchPage({ q: query, yahooMode, pageToFetch: 1, append: false, nocache: true }),
-    [fetchPage, query, yahooMode]
+    () => runFetch({ q: query, ym: yahooMode, sourcesToFetch: null, pageToFetch: 1, mode: 'init', nocache: true }),
+    [runFetch, query, yahooMode]
   );
 
   const cancel = useCallback(() => {
@@ -119,10 +220,10 @@ export function useSearch() {
     inflightRef.current = null;
     setQuery('');
     setYahooMode('all');
-    setPage(1);
-    setResults([]);
+    setBuckets(EMPTY_BUCKETS);
+    setExhausted({ mercari: false, yahoo: false, paypay: false });
+    setAllViewPage(0);
     setCached(false);
-    setHasMore(true);
     setLoading(false);
     setRefreshing(false);
     setError(null);
@@ -131,17 +232,22 @@ export function useSearch() {
   return {
     query,
     yahooMode,
-    page,
-    results,
+    buckets,
+    flatResults,
+    counts,
+    loadedPages,
+    exhausted,
+    hasMoreAny,
+    allViewPage,
     pricing,
     cached,
-    hasMore,
     loading,
     refreshing,
     error,
     search,
     setMode,
     loadMore,
+    loadNextSource,
     refresh,
     cancel,
     reset,

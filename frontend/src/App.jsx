@@ -17,6 +17,7 @@ import { ImageSearchTab } from './components/ImageSearchTab';
 import { ViewToggle } from './components/ViewToggle';
 import { FilterPanel } from './components/FilterPanel';
 import { HealthDot } from './components/HealthDot';
+import { Pager } from './components/Pager';
 import './App.css';
 
 const DEFAULT_PRICING = { rate: 185, markupPct: 20, shipVndPerKg: 175000, defaultWeightKg: 0.2 };
@@ -40,19 +41,34 @@ export default function App() {
   const {
     query,
     yahooMode,
-    results,
+    buckets,
+    flatResults,
+    counts,
+    loadedPages,
+    exhausted,
+    hasMoreAny,
     pricing: livePricing,
     cached,
-    hasMore,
     loading,
     refreshing,
     error,
     search,
     setMode,
     loadMore,
+    loadNextSource,
     refresh,
     reset,
   } = useSearch();
+
+  // Single-source view tracks which page is selected within the active source's bucket.
+  // Reset to 1 whenever query or active source changes (handled inline in the relevant setters
+  // — not via useEffect, to avoid cascading renders).
+  const [singleViewPage, setSingleViewPage] = useState(1);
+
+  const onSourceChange = (s) => {
+    setSourceFilter(s);
+    setSingleViewPage(1);
+  };
 
   const { bookmarks, count, isBookmarked, toggle, clear } = useBookmarks();
   const { history, push: pushHistory, remove: removeHistory, clear: clearHistory } = useHistory();
@@ -63,12 +79,14 @@ export default function App() {
     setSourceFilter('all');
     setSortBy('relevance');
     setFilters(EMPTY_FILTERS);
+    setSingleViewPage(1);
     reset();
   };
 
   const pricing = livePricing || cachedPricing || DEFAULT_PRICING;
 
   const onSearch = (q) => {
+    setSingleViewPage(1);
     if (q) {
       search(q, yahooMode);
       pushHistory({ q, yahooMode });
@@ -77,19 +95,21 @@ export default function App() {
     }
   };
 
-  const counts = useMemo(() => {
-    const c = { mercari: 0, yahoo: 0, paypay: 0 };
-    for (const r of results) if (c[r.source] != null) c[r.source]++;
-    return c;
-  }, [results]);
+  // Items currently shown before filters/sort. In All view = everything fetched so far.
+  // In single-source view = the items on the selected page of that source's bucket.
+  const viewItems = useMemo(() => {
+    if (sourceFilter === 'all') return flatResults;
+    const pageItems = buckets[sourceFilter]?.[singleViewPage - 1];
+    return pageItems || [];
+  }, [sourceFilter, flatResults, buckets, singleViewPage]);
 
   const visible = useMemo(() => {
-    const bySource = sourceFilter === 'all' ? results : results.filter((r) => r.source === sourceFilter);
-    const filtered = applyClientFilters(bySource, filters, { pricing, weightKg });
+    const filtered = applyClientFilters(viewItems, filters, { pricing, weightKg });
     return applySort(filtered, sortBy);
-  }, [results, sourceFilter, filters, sortBy, pricing, weightKg]);
+  }, [viewItems, filters, sortBy, pricing, weightKg]);
 
-  const totalForFilter = sourceFilter === 'all' ? results.length : results.filter((r) => r.source === sourceFilter).length;
+  const totalForFilter = viewItems.length;
+  const hasResults = flatResults.length > 0;
 
   return (
     <div className="app">
@@ -136,9 +156,9 @@ export default function App() {
         <main className="main">
           {error && <div className="error-banner">⚠ {error}</div>}
 
-          {(query || results.length > 0) && (
+          {(query || hasResults) && (
             <div className="filters-row">
-              <SourceTabs active={sourceFilter} onChange={setSourceFilter} counts={counts} />
+              <SourceTabs active={sourceFilter} onChange={onSourceChange} counts={counts} />
               {(sourceFilter === 'all' || sourceFilter === 'yahoo') && (
                 <YahooModeFilter value={yahooMode} onChange={setMode} />
               )}
@@ -147,7 +167,7 @@ export default function App() {
             </div>
           )}
 
-          {(query || results.length > 0) && (
+          {(query || hasResults) && (
             <FilterPanel
               filters={filters}
               onChange={setFilters}
@@ -157,20 +177,20 @@ export default function App() {
             />
           )}
 
-          {loading && results.length === 0 && (
+          {loading && !hasResults && (
             <div className="card-grid">
               {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
           )}
 
-          {!loading && results.length > 0 && visible.length === 0 && (
+          {!loading && viewItems.length > 0 && visible.length === 0 && (
             <div className="empty-state">
               <h2>No matches</h2>
               <p>Adjust the price or condition filters above.</p>
             </div>
           )}
 
-          {!loading && results.length === 0 && query && !error && (
+          {!loading && !hasResults && query && !error && (
             <div className="empty-state">
               <h2>No results</h2>
               <p>Try a different keyword.</p>
@@ -192,7 +212,7 @@ export default function App() {
             </div>
           )}
 
-          {results.length > 0 && hasMore && (
+          {hasResults && sourceFilter === 'all' && hasMoreAny && (
             <div className="load-more-wrap">
               <button
                 type="button"
@@ -205,7 +225,24 @@ export default function App() {
             </div>
           )}
 
-          {!loading && results.length === 0 && !query && (
+          {hasResults && sourceFilter !== 'all' && (
+            <div className="load-more-wrap">
+              <Pager
+                currentPage={singleViewPage}
+                loadedPages={loadedPages[sourceFilter]}
+                onSelect={setSingleViewPage}
+                onLoadNext={async () => {
+                  const nextPage = loadedPages[sourceFilter] + 1;
+                  await loadNextSource(sourceFilter);
+                  setSingleViewPage(nextPage);
+                }}
+                exhausted={exhausted[sourceFilter]}
+                loading={loading}
+              />
+            </div>
+          )}
+
+          {!loading && !hasResults && !query && (
             <div className="empty-state landing">
               <h2>Search 3 Japanese marketplaces at once</h2>
               <p>Mercari, Yahoo Auctions, and PayPay Flea Market — one keyword, JPY + VND prices.</p>

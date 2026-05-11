@@ -32,11 +32,14 @@ The user's IP geolocates to Vietnam. This affects scraping behavior:
   prices in VND in the rendered HTML. The cookie is server-set from
   CF-IPCountry, so client-side overrides don't work. We bypass this by
   intercepting the JSON API response — see `backend/src/scrapers/mercari.skill.md`.
-- **PayPay Flea Market** geo-blocks search from non-JP IPs. From a VN IP (and
-  likely from Render Singapore too), the page renders `「データの取得に失敗しました」`
-  and falls back to generic recommendations. Our scraper detects this state
-  and returns `[]` — see `backend/src/scrapers/paypay.skill.md`. Real fix
-  requires a JP residential proxy (Phase 5).
+- **PayPay Flea Market** does a server-side gate on cold `/search/<q>` hits from
+  non-JP IPs — it serves a 404 + `「データの取得に失敗しました」` page. The fix
+  (added 2026-05-11): the scraper visits the Yahoo!フリマ homepage first to mint
+  a session cookie, then loads `/search/<q>`. After warmup the search returns
+  HTTP 200 with real result anchors from VN IPs. The `データの取得に失敗しました`
+  / `あなたへのおすすめ` marker check is retained as a defensive fallback.
+  See `backend/src/scrapers/paypay.skill.md`. Phase 5 residential proxy is no
+  longer required to get PayPay working from non-JP IPs.
 - **Yahoo Auctions** is fine from VN IPs.
 
 ### Pricing model

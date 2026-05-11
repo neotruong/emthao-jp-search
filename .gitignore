@@ -5,6 +5,9 @@
 .env.local
 .env.*.local
 
+# Root node_modules (only `concurrently` lives here for the one-command runner).
+/node_modules
+
 # IDE / editor
 .vscode/*
 !.vscode/extensions.json

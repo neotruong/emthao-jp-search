@@ -433,6 +433,48 @@ body, html, #root {
   padding: 10px 20px;
 }
 
+/* ===== Pager (single-source pagination) ===== */
+.pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pager-page,
+.pager-next {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pager-page:hover:not(:disabled),
+.pager-next:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.pager-page.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.pager-page:disabled,
+.pager-next:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pager-next {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .weight-input {
   display: inline-flex;
   align-items: center;
